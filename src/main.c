@@ -78,6 +78,9 @@ void print_usage(const char* badarg)
 	  "    -d <directory>     : directory to mount as local filing system.\n"
       "    -c<comment_char>   : character to print before each line from grbl.  default = '#'\n"
       "    -n                 : no comments before grbl response lines.\n"
+      "    -u                 : unpaced serial input - deliver received bytes at the wire rate\n"
+      "                         instead of waiting for the grbl main loop, so a sender that does\n"
+      "                         not wait for acknowledgements can overrun the receive buffer.\n"
       "    -v                 : print version and build information.\n"
       "    -h                 : this help.\n"
       "\n"
@@ -266,6 +269,10 @@ int main(int argc, char *argv[])
 
                 case 'n': //No comment char on grbl responses
                     args.comment_char = 0;
+                    break;
+
+                case 'u': //Unpaced serial input
+                    args.unpaced_serial = true;
                     break;
 
                 case 't': //Tick rate

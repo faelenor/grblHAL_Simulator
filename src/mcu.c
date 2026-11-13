@@ -319,21 +319,28 @@ void simulate_serial (void)
 		isr_exit();
 	}
 
-    // Deliver at most one byte per grbl main-loop pass (see sim_process_realtime):
-    // a pulse of 0 means the grbl thread is still booting and would flush the input,
-    // an unchanged pulse means it has not run since the previous byte - skip this
-    // byte slot and try again at the next one, no input is lost.
+    // Deliver the byte the wire is offering. simulate_hardware() is called once per byte time -
+    // simulator.c advances next_byte_tick by ten bit-times - so arrival here is at the baud rate,
+    // which is what a real receive interrupt sees.
+    //
+    // A pulse of 0 means the grbl thread is still booting and would flush the input, so nothing is
+    // delivered until it has run. Beyond that, delivery is held back until the parser has advanced
+    // and the receive buffer has room, unless -u asks for unpaced input: a real controller's
+    // receive interrupt takes bytes at wire speed whatever its parser is doing, and a full buffer
+    // drops what does not fit. Those two gates make an overrun impossible to reproduce, which is
+    // the one thing a sender's flow control has to be tested against.
     static uint32_t pulse_seen = 0;
 
-    if(sim.grbl_pulse != pulse_seen && uart.rx_irq_enable && !uart.rx_irq && isr_enter()) {
-        if(hal.stream.get_rx_buffer_free() > 100) {
-            uint8_t char_in = sim.getchar();
-            if(char_in) {
-                pulse_seen = sim.grbl_pulse;
-                uart.rx_data = char_in;
-                uart.rx_irq = 1;
-                isr[UART_IRQ]();
-            }
+    const bool parserAdvanced = args.unpaced_serial || sim.grbl_pulse != pulse_seen;
+    const bool bufferHasRoom = args.unpaced_serial || hal.stream.get_rx_buffer_free() > 100;
+
+    if(sim.grbl_pulse && parserAdvanced && bufferHasRoom && uart.rx_irq_enable && !uart.rx_irq && isr_enter()) {
+        uint8_t char_in = sim.getchar();
+        if(char_in) {
+            pulse_seen = sim.grbl_pulse;
+            uart.rx_data = char_in;
+            uart.rx_irq = 1;
+            isr[UART_IRQ]();
         }
         isr_exit();
     }
