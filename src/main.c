@@ -493,7 +493,7 @@ int main(int argc, char *argv[])
         // and nothing in between, which is the shortest path from the simulator to real firmware.
         platform_serial_open(args.serial_device);
         sim.getchar = platform_poll_serial;
-        sim.putchar = platform_serial_out;
+        sim.putchar = sim_serial_device_out;
 
     }
 #endif

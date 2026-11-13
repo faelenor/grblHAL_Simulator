@@ -93,4 +93,7 @@ void simulate_serial (void);
 void sim_serial_out (uint8_t data);
 void sim_socket_out (uint8_t data);
 
+// Write to the serial device and to the response file, so -g works on the device path too.
+void sim_serial_device_out (uint8_t data);
+
 #endif

@@ -238,6 +238,14 @@ void sim_serial_out (uint8_t data)
     }
 }
 
+// Write the byte to the serial device - the peer - and to the response file, so -g captures what the
+// device path sends, exactly as the socket and stdin paths do.
+void sim_serial_device_out (uint8_t data)
+{
+    platform_serial_out(data);
+    sim_serial_out(data);
+}
+
 // Print serial output to sim.socket_fd stream
 void sim_socket_out (uint8_t data)
 {
