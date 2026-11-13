@@ -156,3 +156,54 @@ uint8_t platform_poll_stdin()
 
     return 0;             // no data (EAGAIN/EWOULDBLOCK) or error -> nothing
 }
+
+// A serial device is another source of the same bytes as stdin, so it is polled the same way.
+static int serial_fd = -1;
+
+void platform_serial_open(const char *device)
+{
+    struct termios cfg;
+
+    if ((serial_fd = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK)) < 0) {
+        printf("Fatal: unable to open %s\n", device);
+        exit(-5);
+    }
+
+    if (tcgetattr(serial_fd, &cfg) < 0) {
+        printf("Fatal: %s is not a serial device\n", device);
+        exit(-5);
+    }
+
+    // Raw: no line discipline, no echo, no signal characters - every byte arrives as it was sent,
+    // which is the whole point of a link that carries real-time bytes among the lines.
+    cfmakeraw(&cfg);
+    cfsetispeed(&cfg, B115200);
+    cfsetospeed(&cfg, B115200);
+    cfg.c_cflag |= (CLOCAL | CREAD);
+    cfg.c_cflag &= ~CRTSCTS;      // the grblHAL link has no hardware flow control
+    tcsetattr(serial_fd, TCSANOW, &cfg);
+    tcflush(serial_fd, TCIOFLUSH);
+}
+
+uint8_t platform_poll_serial()
+{
+    uint8_t char_in = 0;
+    ssize_t n = read(serial_fd, &char_in, 1);
+
+    if (n == 1)
+        return char_in;   // byte available
+
+    // Nothing, including a device that has gone away. The caller reads 0 as "no byte" and anything
+    // else as a byte to deliver, so reporting EOF as 0xFF - the stdin convention - would feed a
+    // stream of them to grbl the moment an adapter is unplugged.
+    return 0;
+}
+
+void platform_serial_out(uint8_t data)
+{
+    // One byte per call, as generated: a controller does not wait for a newline before sending a
+    // status report, and a byte the device cannot take right now is dropped rather than blocking the
+    // simulator thread - the same trade a non-blocking write makes anywhere else.
+    if (serial_fd >= 0)
+        write(serial_fd, &data, 1);
+}

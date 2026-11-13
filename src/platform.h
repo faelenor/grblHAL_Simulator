@@ -41,4 +41,11 @@ void platform_sleep(long microsec); //sleep for suggested time in microsec.
 
 uint8_t platform_poll_stdin(); //non-blocking stdin read - returns 0 if no char present, 0xFF for EOF
 
+// Open a serial device as the simulator's link instead of stdin or a socket, so a board can be wired
+// straight to it with a USB-serial adapter. Raw 115200 8N1 with no flow control, which is what the
+// grblHAL link is; bytes are read as they arrive and written as they are produced.
+void    platform_serial_open(const char *device);
+uint8_t platform_poll_serial();            //non-blocking device read - 0 if no char present, 0xFF for EOF
+void    platform_serial_out(uint8_t data); //one byte, written when the simulator produces it
+
 #endif

@@ -81,6 +81,8 @@ void print_usage(const char* badarg)
       "    -u                 : unpaced serial input - deliver received bytes at the wire rate\n"
       "                         instead of waiting for the grbl main loop, so a sender that does\n"
       "                         not wait for acknowledgements can overrun the receive buffer.\n"
+      "    -S <device>        : open a serial device as the link instead of stdin or a socket,\n"
+      "                         raw 115200 8N1 (Linux/macOS). Wire the board's UART here.\n"
       "    -v                 : print version and build information.\n"
       "    -h                 : this help.\n"
       "\n"
@@ -273,6 +275,11 @@ int main(int argc, char *argv[])
 
                 case 'u': //Unpaced serial input
                     args.unpaced_serial = true;
+                    break;
+
+                case 'S': //Serial device
+                    argv++; argc--;
+                    args.serial_device = *argv;
                     break;
 
                 case 't': //Tick rate
@@ -478,7 +485,19 @@ int main(int argc, char *argv[])
         sim.getchar = sim_socket_in;
         sim.putchar = sim_socket_out;
 
-    } else {
+    }
+#ifndef WIN32
+    else if (args.serial_device) {
+
+        // A device instead of a socket: a board's UART wired to this one with a USB-serial adapter
+        // and nothing in between, which is the shortest path from the simulator to real firmware.
+        platform_serial_open(args.serial_device);
+        sim.getchar = platform_poll_serial;
+        sim.putchar = platform_serial_out;
+
+    }
+#endif
+    else {
         sim.getchar = platform_poll_stdin;
         sim.putchar = sim_serial_out;
     }

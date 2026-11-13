@@ -66,6 +66,7 @@ typedef struct arg_vars {
     double step_time;       // Minimum time step for printing stepper values, in sim time. Given by user via command line
     uint8_t comment_char;   // Char to prefix comments; default  '#' 
     uint16_t port;          // Port number for telnet communication
+    const char *serial_device; // device to open as the serial link instead of stdin or a socket
     bool unpaced_serial;    // deliver received bytes at the wire rate instead of waiting for the
                             // grbl main loop, so a sender can overrun the receive buffer
 } arg_vars_t;
