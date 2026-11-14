@@ -162,6 +162,16 @@ static bool serialDisableRx (bool state)
  * called from the simulator's own main loop (mcu.c feeds the emulated UART from it) and can. */
 bool simMpgCheckEnable (const uint8_t c)
 {
+    /* An ordinary status poll is answered with a full one. The MPG element rides in a full report,
+     * and a panel reads the mode from whatever report it gets - so a panel polling a simulator that
+     * answered plainly would see the mode change once, in the report the change itself forced, and
+     * then nothing about it, which is a panel that cannot tell what mode the machine is in.
+     *
+     * The character is what arrives here, not the code: '?' for a status poll (a sender may also
+     * send the realtime code itself). */
+    if(c == '?' || c == CMD_STATUS_REPORT)
+        return protocol_enqueue_realtime_command(CMD_STATUS_REPORT_ALL);
+
     if(c != CMD_MPG_MODE_TOGGLE)
         return protocol_enqueue_realtime_command(c);
 
@@ -185,6 +195,13 @@ static void simMpgReportAdd (report_tracking_flags_t report)
         hal.stream.report.flags.value = 0;
     else
         hal.stream.report.flags.value |= report.value;
+
+    /* MPG mode is a state rather than an event, and a panel reads it from whatever report it gets.
+     * The flag is cleared with the rest after each report, so without this only the one report the
+     * change itself forced would carry the element, and every status poll after it would say nothing
+     * about the mode - leaving a panel that polled a mode it could not see. Kept set on every report,
+     * the element is written with the mode's current value, as a controller's is. */
+    hal.stream.report.flags.mpg_mode = On;
 }
 
 void simMpgReportHookInstall (void)
