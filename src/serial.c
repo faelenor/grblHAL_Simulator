@@ -134,6 +134,65 @@ static enqueue_realtime_command_ptr serialSetRtHandler (enqueue_realtime_command
     return prev;
 }
 
+/* The MPG stream's registration refuses any stream that cannot be told to stop receiving, and on
+ * a controller that is the point of a claim: the primary goes deaf while an app is in control.
+ * There is one stream here - the bench has one sender and it is wired to this port - so there is
+ * no second receiver to protect and nothing to switch off. It is answered rather than left out,
+ * because without it stream_mpg_register refuses the stream and the simulator cannot be put into
+ * MPG mode at all. */
+static bool serialDisableRx (bool state)
+{
+    (void)state;
+
+    /* Reports the request as applied. Nothing here is switched off - the one port serves both
+     * roles - and saying so is what lets a claim succeed: a caller that checks this rather than
+     * ignoring it would otherwise refuse the request and MPG mode with it. */
+    return true;
+}
+
+/* The realtime handler the MPG stream is registered with, and with it the place a claim is
+ * recognised: CMD_MPG_MODE_TOGGLE turns MPG mode on, and turning it on again gives control back.
+ * The core's own handler cannot be used here, because it routes status reports to the MPG port -
+ * and on this simulator the MPG port is the port the panel is already talking on, so its reports
+ * would be written back into the same stream and never reach the panel. Everything except the
+ * toggle goes to the core's parser, which is what the primary's handler would have done with it.
+ *
+ * The mode is changed here rather than scheduled, which is what a controller does with it: there
+ * the handler runs in the receive interrupt and cannot touch the stream from it, while this one is
+ * called from the simulator's own main loop (mcu.c feeds the emulated UART from it) and can. */
+bool simMpgCheckEnable (const uint8_t c)
+{
+    if(c != CMD_MPG_MODE_TOGGLE)
+        return protocol_enqueue_realtime_command(c);
+
+    stream_mpg_enable(!hal.stream.state.is_mpg);
+
+    return true;
+}
+
+/* The core accumulates realtime report flags on the MPG port (mpg_rt_report_add, in grbl/stream.c),
+ * and on a controller that is where a panel's reports come from - the MPG: element reaches it from
+ * there. Here the panel is on this one port, so the flags it has to see are this stream's. Chained
+ * rather than replaced: the core's own hook still does its own accumulating. */
+static on_rt_reports_added_ptr previous_report_add = NULL;
+
+static void simMpgReportAdd (report_tracking_flags_t report)
+{
+    if(previous_report_add)
+        previous_report_add(report);
+
+    if(report.value == 0)
+        hal.stream.report.flags.value = 0;
+    else
+        hal.stream.report.flags.value |= report.value;
+}
+
+void simMpgReportHookInstall (void)
+{
+    previous_report_add = grbl.on_rt_reports_added;
+    grbl.on_rt_reports_added = simMpgReportAdd;
+}
+
 const io_stream_t *serialInit (void)
 {
         static const io_stream_t stream = {
@@ -148,7 +207,8 @@ const io_stream_t *serialInit (void)
         .reset_read_buffer = serialRxFlush,
         .cancel_read_buffer = serialRxCancel,
         .suspend_read = serialSuspendInput,
-        .set_enqueue_rt_handler = serialSetRtHandler
+        .set_enqueue_rt_handler = serialSetRtHandler,
+        .disable_rx = serialDisableRx
     };
 
     mcu_register_irq_handler(uart_interrupt_handler, UART_IRQ);

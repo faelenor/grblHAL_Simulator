@@ -29,4 +29,12 @@
 
 const io_stream_t *serialInit (void);
 
+/* The realtime handler the MPG stream is registered with: it recognises a claim and passes
+ * everything else through. Defined in serial.c, next to the stream it belongs to. */
+bool simMpgCheckEnable (const uint8_t c);
+
+/* Makes this stream's reports carry the MPG: element, which the core keeps on the MPG port - the
+ * port a panel is on for a real controller, and this same one here. Call after registering. */
+void simMpgReportHookInstall (void);
+
 #endif

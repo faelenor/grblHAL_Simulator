@@ -502,6 +502,25 @@ bool driver_init ()
 */
 
     memcpy(&hal.stream, serialInit(), sizeof(io_stream_t));
+
+    /* MPG mode, as the controller has it: the panel claims control with 0x8B, the reports carry the
+     * MPG: element it reads, and releasing gives control back. The MPG stream registered here is
+     * this same stream - the simulator has one port and the sender is on it - so the claim changes
+     * what the reports say and nothing else, which is the part the panel is being tested against.
+     *
+     * rx_only, because the other path is for a port that can transmit: it adds a connection, takes
+     * over hal.stream.write_all and schedules a delayed task, none of which a host build has any
+     * use for and one of which it does not have to schedule. There is no second port here to
+     * transmit on anyway.
+     *
+     * The handler is simMpgCheckEnable, in serial.c: a claim is dispatched through it, and it has
+     * to be the simulator's own rather than the core's, which would send this panel's reports back
+     * up the same stream. */
+    if(!hal.driver_cap.mpg_mode)
+        hal.driver_cap.mpg_mode = stream_mpg_register(&hal.stream, true, simMpgCheckEnable);
+
+    if(hal.driver_cap.mpg_mode)
+        simMpgReportHookInstall();
     hal.nvs.type = NVS_EEPROM;
     hal.nvs.get_byte = eeprom_get_char;
     hal.nvs.put_byte = eeprom_put_char;
