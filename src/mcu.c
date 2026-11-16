@@ -27,6 +27,7 @@
 
 #include "mcu.h"
 #include "simulator.h"
+#include "platform.h"
 #include "grbl/hal.h"
 
 static volatile bool irq_enable = false;
@@ -334,6 +335,8 @@ void simulate_serial (void)
     const bool parserAdvanced = args.unpaced_serial || sim.grbl_pulse != pulse_seen;
     const bool bufferHasRoom = args.unpaced_serial || hal.stream.get_rx_buffer_free() > 100;
 
+    bool delivered = false;
+
     if(sim.grbl_pulse && parserAdvanced && bufferHasRoom && uart.rx_irq_enable && !uart.rx_irq && isr_enter()) {
         uint8_t char_in = sim.getchar();
         if(char_in) {
@@ -341,7 +344,31 @@ void simulate_serial (void)
             uart.rx_data = char_in;
             uart.rx_irq = 1;
             isr[UART_IRQ]();
-        }
+            delivered = true;
+            sim.link_active = true;
+        } else
+            // The wire is dry, so there is nothing left for the grbl thread to keep up with and it can
+            // go back to parking (see sim_process_realtime). Cleared here rather than on a timer
+            // because this is the only place that knows the wire is empty: a timer long enough to carry
+            // a burst through is long enough to spin through the gap between one byte and the next on a
+            // link that is only being polled, which is most of what a pendant does - measured at a
+            // fifth of a core against an attached but idle controller.
+            sim.link_active = false;
         isr_exit();
     }
+
+    // The grbl thread sleeps between the work it has (see sim_process_realtime), so it has to be woken
+    // whenever this pass could not hand over a byte for a reason its main loop is the one that clears:
+    //
+    //   a byte was delivered      - its main loop still has to read and parse it;
+    //   the gate is shut          - its main loop has not run since the last byte, and running is what
+    //                               opens the gate;
+    //   the receive buffer is full - its main loop is what drains it.
+    //
+    // Waking on the last one is not optional: without it a full buffer stays full, because the party
+    // that would empty it is asleep waiting for the party that is waiting for room. Nothing here wakes
+    // on an idle wire whose gate is open and whose buffer has room, which is what keeps the process
+    // off the CPU between bytes.
+    if(delivered || (sim.grbl_pulse && (!parserAdvanced || !bufferHasRoom)))
+        platform_wake_signal();
 }

@@ -11,14 +11,14 @@
 #define platform_h
 #include <inttypes.h>
 
-// On the host, the grbl thread and the simulator thread share one (or few) real
-// CPU cores. grbl's main loop and driver_delay_ms's spin loop run at full host
-// speed, so without cooperation they starve the simulator thread and burn a
-// whole core (process CPU ~= 2x wall). Yielding the host CPU here does NOT change
-// simulation timing: the simulated tick at which every event fires is driven by
-// the simulator thread's clock/ISRs, not by how often the grbl thread polls.
-// It only lets the scheduler hand cycles to the simulator thread when the grbl
-// thread would otherwise busy-spin.
+// On the host, the grbl thread and the simulator thread share one (or few) real CPU cores. grbl's
+// main loop would otherwise run at full host speed and burn a whole core, so the grbl thread waits on
+// the handshake below and the simulator thread wakes it when there is something for it to do. Waiting
+// does NOT change simulation timing: the simulated tick at which every event fires is driven by the
+// simulator thread's clock and ISRs, not by how often the grbl thread polls.
+//
+// sim_yield() is still what to use for a wait that is expected to end within the same timeslice, such
+// as mcu_disable_interrupts() waiting for an ISR already running on the other thread.
 #ifndef WIN32
 #include <sched.h>
 #define sim_yield() sched_yield()
@@ -31,6 +31,17 @@
 
 void platform_init();
 void platform_terminate();
+
+// Set up the handshake between the two threads. Called from platform_init(), before either starts.
+void platform_wake_init();
+
+// Wake the grbl thread: something has happened that its main loop has to look at. Signals coalesce,
+// so several raised before it runs are the one run they are all asking for.
+void platform_wake_signal();
+
+// Block until woken. Returns at once when a signal is already pending, so a signal raised between the
+// caller's decision to wait and the wait itself is not lost.
+void platform_wake_wait();
 
 plat_thread_t* platform_start_thread(plat_threadfunc_t func);
 void platform_stop_thread(plat_thread_t* thread);

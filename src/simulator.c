@@ -214,6 +214,12 @@ void sim_loop (void)
             ticks_per_frame = scale_ticks_per_frame(ticks_per_frame, (double)control_frame_ns / ns_elapsed, max_ticks_per_frame);
         }
 
+        // A delivered byte wakes the grbl thread as it goes (mcu.c), so this is the bound on how long
+        // something that is not a byte may wait to be noticed - a pin toggled from the console, a
+        // state change raised by an ISR. One control frame is that bound: it is the frame the
+        // simulation itself works in, so nothing can be seen later than the simulator acts on it.
+        platform_wake_signal();
+
         target_ticks += ticks_per_frame;
     }
 }

@@ -65,8 +65,17 @@ static void driver_delay_ms (uint32_t ms, void (*callback)(void))
     if((delay.ms = ms) > 0) {
         systick_timer.enable = 1;
         if(!(delay.callback = callback))
+            // Spin, and keep spinning: this is the one busy loop in the simulator that cannot be
+            // turned into a wait. SysTick on the simulator thread decrements delay.ms, so waiting for
+            // it looks free - and every way of waiting for it stretches the delay by about a fifth.
+            // Measured against the same G4 on the unmodified build, which acknowledges a 2s dwell at
+            // 2.04s: sleeping 200us at a time gave 2.41s, sleeping a whole tick at a time gave 2.43s,
+            // and waking a parked thread from the tick that ends the delay gave 2.46s. Spinning gives
+            // 2.04s. Whatever the simulator's frame pacing is measuring, it needs this thread runnable
+            // across the delay - so the wait that looks free costs a fifth of every dwell, while this
+            // spin costs CPU only while a delay is actually running, never while the bench is idle.
             while(delay.ms)
-                sim_yield(); // hand the host CPU to the simulator thread while waiting; delay.ms is decremented by SysTick on the sim thread
+                sim_yield();
     } else if(callback)
         callback();
 }
@@ -423,7 +432,31 @@ void sim_process_realtime (uint_fast16_t state)
 
     grbl_print_recent_block(); // on this (grbl) thread, which owns the planner
 
-    sim_yield(); // yield to the simulator thread instead of spinning grbl's main loop at full host speed
+    // What the host pays for the main loop depends on whether the link is carrying anything.
+    //
+    // While it is, this loop has to run many times per byte: the simulator hands grbl one byte per
+    // iteration of this function (the pulse gate in mcu.c), so anything that parks between iterations
+    // throttles the link to the cost of a park and a wake - measured at an eighth of the rate. Handing
+    // the CPU over instead keeps the rate, and costs a core, which is the right trade while the link
+    // is busy.
+    //
+    // Once the wire is dry there is nothing to keep up with, and the same handing over is a core
+    // burned for nothing at all - which is what it did for the whole of a bench, attached or not.
+    // Parking until the simulator signals costs nothing there, and what ends the park is the next byte
+    // or the next control frame.
+    //
+    // Both halves of the test earn their place. The backlog is the half that survives -u, where the
+    // simulator's gate is open whatever this loop does: the bytes pile up in grbl's input buffer and
+    // the wire reads dry while that buffer is still full, so a thread that parked on the wire alone
+    // would drain one pass per control frame - measured at a tenth of the acknowledgements over a 300
+    // line blast. The link's activity is the half that survives an empty buffer: the simulator hands
+    // over one byte per iteration here, so between two of them the buffer is empty and the link busy,
+    // which is exactly when parking costs the most.
+    if(sim.link_active || hal.stream.get_rx_buffer_count())
+        sim_yield();
+    else
+        platform_wake_wait();
+
     on_execute_realtime(state);
 }
 

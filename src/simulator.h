@@ -39,6 +39,13 @@ typedef struct sim_vars {
     // longer stored/updated per tick. See print_steps() in grbl_interface.c.
     uint8_t started;  // don't start timers until first char recieved.
     volatile uint32_t grbl_pulse; // grbl thread main-loop heartbeat; 0 until the boot sequence (which flushes the input stream) is done
+
+    // Set while the wire is handing bytes over and cleared when a pass finds it dry. The grbl thread
+    // spins while it is set and parks while it is not: the simulator hands over one byte per iteration
+    // of that thread's main loop, so parking through a burst throttles the link to the wake latency,
+    // and spinning through an idle link burns a core for nothing. See simulate_serial() and
+    // sim_process_realtime().
+    volatile bool link_active;
     enum {exit_NO, exit_REQ, exit_OK} exit;
     float speedup; // current factor how much faster/slower sim time is compared to real time
     int32_t baud_ticks;

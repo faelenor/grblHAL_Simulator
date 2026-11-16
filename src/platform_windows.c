@@ -32,6 +32,28 @@
 
 double ns_per_perfcount;
 
+// The grbl thread waits here and the simulator thread signals it (see platform.h). An auto-reset
+// event has exactly the semantics wanted: a signal wakes one waiter, and several raised before it
+// runs collapse into the one run they are asking for.
+static HANDLE wake_event;
+
+void platform_wake_init(void)
+{
+    wake_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
+void platform_wake_signal(void)
+{
+    if (wake_event)
+        SetEvent(wake_event);
+}
+
+void platform_wake_wait(void)
+{
+    if (wake_event)
+        WaitForSingleObject(wake_event, INFINITE);
+}
+
 // Saved console input mode so QuickEdit can be restored on exit.
 static DWORD orig_console_mode;
 static int console_mode_saved = 0;
@@ -40,6 +62,8 @@ static int console_mode_saved = 0;
 void platform_init()
 {
     __int64 counts_per_sec;
+
+    platform_wake_init();
 
     QueryPerformanceFrequency((LARGE_INTEGER*)&counts_per_sec);
     ns_per_perfcount = (float)NS_PER_SEC / counts_per_sec;

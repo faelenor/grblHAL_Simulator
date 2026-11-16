@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <termios.h>
 #include <fcntl.h>
@@ -31,6 +32,37 @@
 #define MS_PER_SEC 1000000
 
 #define SIM_ECHO_TERMINAL 0 //use this to make grbl_sim act like a serial terminal with local echo on.
+
+// The grbl thread waits here and the simulator thread signals it (see platform.h). A mutex and a
+// condition variable with a pending flag rather than a bare semaphore, so that a signal raised before
+// the wait is not lost and repeated signals collapse into the one run they are asking for.
+static pthread_mutex_t wake_mutex;
+static pthread_cond_t  wake_cond;
+static bool            wake_pending;
+
+void platform_wake_init(void)
+{
+    pthread_mutex_init(&wake_mutex, NULL);
+    pthread_cond_init(&wake_cond, NULL);
+    wake_pending = false;
+}
+
+void platform_wake_signal(void)
+{
+    pthread_mutex_lock(&wake_mutex);
+    wake_pending = true;
+    pthread_cond_signal(&wake_cond);
+    pthread_mutex_unlock(&wake_mutex);
+}
+
+void platform_wake_wait(void)
+{
+    pthread_mutex_lock(&wake_mutex);
+    while(!wake_pending)
+        pthread_cond_wait(&wake_cond, &wake_mutex);
+    wake_pending = false;
+    pthread_mutex_unlock(&wake_mutex);
+}
 
 // Saved STDIN state so it can be restored on exit. The terminal is switched to
 // raw mode (and STDIN made non-blocking) once at startup instead of on every
@@ -56,6 +88,8 @@ static void platform_restore_terminal(void)
 //any platform-specific setup that must be done before sim starts here
 void platform_init()
 {
+    platform_wake_init();
+
     // Make STDIN non-blocking once so polling is a single read() with no
     // per-poll select()/tcsetattr() dance. Save the original flags so they can
     // be restored on exit (important when STDIN is a shared tty).
