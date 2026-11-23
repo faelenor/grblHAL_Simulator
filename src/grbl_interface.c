@@ -70,11 +70,15 @@ void grbl_per_tick (void)
 
 void grbl_per_byte (void)
 {
-    if(sim.socket_fd) {
-        // In socket mode the console keyboard only toggles simulated pins, so
-        // polling it every byte slot (~11.5k conhost round-trips per simulated
-        // second on Windows) is wasted syscalls. Every 128 slots (~11 ms of
-        // sim time at 115200 baud) is far below human reaction time.
+    // Poll the console for simulated pin toggles whenever it is not the link: a socket carries the
+    // bytes under -p and a serial device does under -S, which leaves the keyboard free in both and is
+    // the only way to move a pin - a probe touch, a limit, an E-stop - from the bench. Without this the
+    // keys work only in socket mode, and a board wired to the simulator has no way to be told the tool
+    // has touched the plate.
+    //
+    // Polling it every byte slot (~11.5k conhost round-trips per simulated second on Windows) is wasted
+    // syscalls. Every 128 slots (~11 ms of sim time at 115200 baud) is far below human reaction time.
+    if(sim.socket_fd || args.serial_device) {
         static uint_fast8_t kbd_divider = 0;
 
         if((++kbd_divider & 0x7f) == 0)

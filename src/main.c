@@ -88,6 +88,12 @@ void print_usage(const char* badarg)
       "\n"
       "  <time_step> and <block_file> can be specifed with option flags or positional parameters\n"
       "\n"
+      "  Console keys, with -p or -S (the console is not the link there):\n"
+      "    p : toggle the probe pin              o : toggle the probe-connected pin\n"
+      "    h : feed hold                         s : cycle start\n"
+      "    d : safety door                       e : emergency stop\n"
+      "    r : reset                             x/y/z and X/Y/Z : limit switches\n"
+      "    ? : status report                     @ : full status report\n"
       "  ^-F to shutdown cleanly\n"
       "\n",
       progname);
